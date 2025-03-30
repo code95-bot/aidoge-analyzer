@@ -1,6 +1,7 @@
-
 streamlit
-ccxt
 pandas
+numpy
 ta
-matplotlib
+plotly
+requests
+ccxt
