@@ -5,3 +5,5 @@ ta
 plotly
 requests
 ccxt
+matplotlib
+
