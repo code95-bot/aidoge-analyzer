@@ -1,85 +1,105 @@
-# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import ccxt
 import numpy as np
+import ccxt
 import ta
 
 st.set_page_config(page_title="AIDOGE Analyzer", layout="wide")
 
 st.title("📊 AIDOGE Analyzer")
-st.markdown("✅ تم دمج المؤشرات الفنية مع التحليل الاستراتيجي بنجاح")
+st.markdown("✅ تحليل فني فوري لعملات OKX")
 
-# إعدادات
 exchange = ccxt.okx()
 markets = exchange.load_markets()
-symbols = sorted([s for s in markets if "/USDT" in s])
-
-symbol = st.selectbox("🔍 اختر العملة", symbols, index=symbols.index("AIDOGE/USDT") if "AIDOGE/USDT" in symbols else 0)
-timeframes = {"1m": "1 دقيقة", "5m": "5 دقائق", "15m": "15 دقيقة", "1h": "1 ساعة", "1d": "1 يوم", "1w": "1 أسبوع"}
-tf_key = st.selectbox("🕒 اختر الفريم الزمني", list(timeframes.keys()), format_func=lambda x: timeframes[x])
-
-# بيانات
-data = exchange.fetch_ohlcv(symbol, timeframe=tf_key, limit=100)
-df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
-df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-df.set_index("timestamp", inplace=True)
-
-# المؤشرات
-df["rsi"] = ta.momentum.RSIIndicator(df["close"]).rsi()
-macd = ta.trend.MACD(df["close"])
-df["macd"] = macd.macd_diff()
-bb = ta.volatility.BollingerBands(df["close"])
-df["bb_upper"] = bb.bollinger_hband()
-df["bb_lower"] = bb.bollinger_lband()
-
-price = df["close"].iloc[-1]
-rsi_val = df["rsi"].iloc[-1]
-macd_val = df["macd"].iloc[-1]
-bb_pos = "داخل النطاق"
-if price > df["bb_upper"].iloc[-1]:
-    bb_pos = "فوق الباند العلوي"
-elif price < df["bb_lower"].iloc[-1]:
-    bb_pos = "تحت الباند السفلي"
+symbols = [symbol for symbol in markets if "/USDT" in symbol]
 
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("السعر الحالي:", f"{price:.12f} USDT", delta=None)
+    selected_symbol = st.selectbox("🔎 اختر العملة", symbols, index=symbols.index("AIDOGE/USDT") if "AIDOGE/USDT" in symbols else 0)
 with col2:
-    st.subheader("⚙️ المؤشرات الفنية")
-    st.write(f"**RSI:** `{rsi_val:.2f}` - {'شراء' if rsi_val < 30 else 'بيع' if rsi_val > 70 else 'محايد'}")
-    st.write(f"**MACD:** `{macd_val:.2f}` - {'اتجاه صاعد' if macd_val > 0 else 'اتجاه هابط' if macd_val < 0 else 'محايد'}")
-    st.write(f"**Bollinger Band:** {bb_pos}")
+    timeframe = st.selectbox("🕒 اختر الفريم الزمني", ["1m", "5m", "15m", "1h", "1d", "1w"])
 
-# الاستنتاج
-st.markdown("### ✅ الاستنتاج الاستراتيجي")
-if rsi_val < 30 and macd_val > 0:
-    st.success("إشارة شراء مؤكدة – يمكنك التفكير في Long")
-elif rsi_val > 70 and macd_val < 0:
-    st.error("إشارة بيع مؤكدة – يمكن التفكير في Short")
-else:
-    st.warning("إشارة غير مؤكدة – يُفضل الانتظار لمزيد من التأكيد.")
+def get_data(symbol, timeframe):
+    try:
+        bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=100)
+        df = pd.DataFrame(bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("timestamp", inplace=True)
+        return df
+    except Exception as e:
+        st.error(f"حدث خطأ أثناء تحميل البيانات: {e}")
+        return None
 
-# الدعم والمقاومة
-pivot = (df["high"].iloc[-1] + df["low"].iloc[-1] + price) / 3
-r1 = 2 * pivot - df["low"].iloc[-1]
-s1 = 2 * pivot - df["high"].iloc[-1]
-r2 = pivot + (r1 - s1)
-s2 = pivot - (r1 - s1)
-r3 = df["high"].iloc[-1] + 2 * (pivot - df["low"].iloc[-1])
-s3 = df["low"].iloc[-1] - 2 * (df["high"].iloc[-1] - pivot)
+df = get_data(selected_symbol, timeframe)
 
-levels = {
-    "Support 3": s3,
-    "Support 2": s2,
-    "Support 1": s1,
-    "Pivot": pivot,
-    "Resistance 1": r1,
-    "Resistance 2": r2,
-    "Resistance 3": r3,
-}
+if df is not None:
+    current_price = df["close"].iloc[-1]
+    st.subheader(f"💰 السعر الحالي: :green[{current_price:.12f}] USDT")
 
-support_df = pd.DataFrame(list(levels.items()), columns=["Niveau", "Valeur"])
-support_df["Valeur"] = support_df["Valeur"].apply(lambda x: f"{x:.12f}")
-st.markdown("### 📌 Niveaux de Support & Résistance")
-st.table(support_df)
+    st.markdown("## ⚙️ المؤشرات الفنية")
+
+    rsi = ta.momentum.RSIIndicator(close=df["close"]).rsi().iloc[-1]
+    macd = ta.trend.MACD(close=df["close"])
+    macd_value = macd.macd_diff().iloc[-1]
+    bb = ta.volatility.BollingerBands(close=df["close"])
+    bb_status = "-"
+    if df["close"].iloc[-1] > bb.bollinger_hband().iloc[-1]:
+        bb_status = "📈 فوق النطاق العلوي"
+    elif df["close"].iloc[-1] < bb.bollinger_lband().iloc[-1]:
+        bb_status = "📉 تحت النطاق السفلي"
+    else:
+        bb_status = "داخل النطاق"
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("RSI", f"{rsi:.2f}")
+    col2.metric("MACD", f"{macd_value:.2f}")
+    col3.markdown(f"**Bollinger Band:** {bb_status}")
+
+    # استنتاج عام
+    st.markdown("## ✅ الاستنتاج الاستراتيجي")
+    recommendation = "⚠️ إشارة غير مؤكدة – يُفضل الانتظار لمزيد من التأكيد."
+    if rsi < 30 and macd_value > 0:
+        recommendation = "✅ فرصة شراء – المؤشرات تدعم دخول إيجابي."
+    elif rsi > 70 and macd_value < 0:
+        recommendation = "❌ إشارة بيع – السوق في حالة تشبع شرائي."
+    st.info(recommendation)
+
+    # تحليل اتجاه السوق
+    st.markdown("## 📊 اتجاه السوق")
+    if rsi < 35 and macd_value > 0:
+        market_trend = "📈 السوق في صعود قوي"
+    elif rsi > 65 and macd_value < 0:
+        market_trend = "📉 السوق في هبوط قوي"
+    elif 45 <= rsi <= 55 and abs(macd_value) < 0.1:
+        market_trend = "➖ السوق مستقر أو جانبي"
+    else:
+        market_trend = "⚠️ الاتجاه غير واضح حالياً"
+    st.info(market_trend)
+
+    # الدعم والمقاومة
+    st.markdown("## 📌 Niveaux de Support & Résistance")
+    high = df["high"].max()
+    low = df["low"].min()
+    pivot = (high + low + current_price) / 3
+    support1 = (2 * pivot) - high
+    resistance1 = (2 * pivot) - low
+    support2 = pivot - (resistance1 - support1)
+    resistance2 = pivot + (resistance1 - support1)
+    support3 = low - 2 * (high - pivot)
+    resistance3 = high + 2 * (pivot - low)
+
+    support_resistance_data = pd.DataFrame({
+        "Niveau": [
+            "Support 3", "Support 2", "Support 1", "Pivot",
+            "Résistance 1", "Résistance 2", "Résistance 3"
+        ],
+        "Valeur": [
+            support3, support2, support1, pivot,
+            resistance1, resistance2, resistance3
+        ]
+    })
+
+    support_resistance_data["Valeur"] = support_resistance_data["Valeur"].apply(lambda x: f"{x:.12f}")
+    st.table(support_resistance_data)
+
+    st.caption("🧠 يتم التحديث تلقائياً عند كل تشغيل – يعرض أحدث 100 شمعة.")
