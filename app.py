@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,110 +6,120 @@ import ta
 
 st.set_page_config(page_title="AIDOGE Analyzer", layout="wide")
 
-# واجهة المستخدم
 st.title("📊 AIDOGE Analyzer")
-st.markdown("### اختر العملة والفريم الزمني:")
+st.markdown("✅ تحليل فني فوري لعملات OKX")
 
 exchange = ccxt.okx()
 markets = exchange.load_markets()
-symbols = sorted([s for s in markets if "/USDT" in s])
-symbol = st.selectbox("اختر العملة", symbols, index=symbols.index("AIDOGE/USDT") if "AIDOGE/USDT" in symbols else 0)
+symbols = [symbol for symbol in markets if "/USDT" in symbol]
 
-timeframes = {
-    "1 دقيقة": "1m", "5 دقائق": "5m", "15 دقيقة": "15m",
-    "1 ساعة": "1h", "يومي": "1d", "أسبوعي": "1w"
-}
-tf_display = list(timeframes.keys())
-tf_select = st.selectbox("اختر الفريم الزمني", tf_display)
-tf = timeframes[tf_select]
+col1, col2 = st.columns(2)
+with col1:
+    selected_symbol = st.selectbox("🔎 اختر العملة", symbols, index=symbols.index("AIDOGE/USDT") if "AIDOGE/USDT" in symbols else 0)
+with col2:
+    timeframe = st.selectbox("🕒 اختر الفريم الزمني", ["1m", "5m", "15m", "1h", "1d", "1w"])
 
-def get_ohlcv(symbol, timeframe, limit=100):
+def get_data(symbol, timeframe):
     try:
-        data = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-        df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=100)
+        df = pd.DataFrame(bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("timestamp", inplace=True)
         return df
     except Exception as e:
-        st.error(f"فشل تحميل البيانات: {e}")
-        return pd.DataFrame()
+        st.error(f"حدث خطأ أثناء تحميل البيانات: {e}")
+        return None
 
-def calculate_indicators(df):
-    df["RSI"] = ta.momentum.RSIIndicator(df["close"]).rsi()
-    macd = ta.trend.MACD(df["close"])
-    df["MACD"] = macd.macd_diff()
-    boll = ta.volatility.BollingerBands(df["close"])
-    df["Bollinger_H"] = boll.bollinger_hband()
-    df["Bollinger_L"] = boll.bollinger_lband()
-    df["EMA50"] = ta.trend.EMAIndicator(df["close"], window=50).ema_indicator()
-    df["EMA200"] = ta.trend.EMAIndicator(df["close"], window=200).ema_indicator()
-    return df
+df = get_data(selected_symbol, timeframe)
 
-def interpret_signals(df):
-    rsi = df["RSI"].iloc[-1]
-    macd = df["MACD"].iloc[-1]
-    price = df["close"].iloc[-1]
-    upper = df["Bollinger_H"].iloc[-1]
-    lower = df["Bollinger_L"].iloc[-1]
-    ema50 = df["EMA50"].iloc[-1]
-    ema200 = df["EMA200"].iloc[-1]
+if df is not None:
+    current_price = df["close"].iloc[-1]
+    st.subheader(f"💰 السعر الحالي: :green[{current_price:.12f}] USDT")
 
-    rsi_status = "شراء" if rsi < 30 else "بيع" if rsi > 70 else "محايد"
-    macd_status = "اتجاه صاعد" if macd > 0 else "اتجاه هابط"
-    bb_status = "تحت الباند السفلي" if price < lower else "فوق الباند العلوي" if price > upper else "داخل النطاق"
-    ema_trend = "صاعد" if ema50 > ema200 else "هابط"
+    st.markdown("## ⚙️ المؤشرات الفنية")
 
-    signals = {
-        "RSI": (rsi, rsi_status),
-        "MACD": (macd, macd_status),
-        "Bollinger Band": (price, bb_status),
-        "EMA الاتجاه": ema_trend
-    }
-
-    # تحليل استراتيجي بسيط
-    if rsi < 30 and macd > 0 and ema50 > ema200:
-        conclusion = "✅ إشارة شراء قوية"
-    elif rsi > 70 and macd < 0 and ema50 < ema200:
-        conclusion = "❌ إشارة بيع قوية"
+    rsi = ta.momentum.RSIIndicator(close=df["close"]).rsi().iloc[-1]
+    macd = ta.trend.MACD(close=df["close"])
+    macd_value = macd.macd_diff().iloc[-1]
+    bb = ta.volatility.BollingerBands(close=df["close"])
+    bb_status = "-"
+    if df["close"].iloc[-1] > bb.bollinger_hband().iloc[-1]:
+        bb_status = "📈 فوق النطاق العلوي"
+    elif df["close"].iloc[-1] < bb.bollinger_lband().iloc[-1]:
+        bb_status = "📉 تحت النطاق السفلي"
     else:
-        conclusion = "⚠️ إشارة غير مؤكدة – يُفضل الانتظار لمزيد من التأكيد."
+        bb_status = "داخل النطاق"
 
-    return signals, conclusion
+    # حساب EMA50 و EMA200
+    ema50 = ta.trend.EMAIndicator(close=df["close"], window=50).ema_indicator().iloc[-1]
+    ema200 = ta.trend.EMAIndicator(close=df["close"], window=200).ema_indicator().iloc[-1]
 
-def support_resistance(df):
-    pivot = (df["high"] + df["low"] + df["close"]) / 3
-    r1 = 2 * pivot - df["low"]
-    s1 = 2 * pivot - df["high"]
-    r2 = pivot + (r1 - s1)
-    s2 = pivot - (r1 - s1)
-    r3 = df["high"] + 2 * (pivot - df["low"])
-    s3 = df["low"] - 2 * (df["high"] - pivot)
 
-    return {
-        "Support 3": s3.iloc[-1],
-        "Support 2": s2.iloc[-1],
-        "Support 1": s1.iloc[-1],
-        "Pivot": pivot.iloc[-1],
-        "Resistance 1": r1.iloc[-1],
-        "Resistance 2": r2.iloc[-1],
-        "Resistance 3": r3.iloc[-1]
-    }
+    col1, col2, col3 = st.columns(3)
+    col1.metric("RSI", f"{rsi:.2f}")
+    col2.metric("MACD", f"{macd_value:.2f}")
+    col3.markdown(f"**Bollinger Band:** {bb_status}")
 
-# تنفيذ التحليل
-df = get_ohlcv(symbol, tf)
-if not df.empty:
-    df = calculate_indicators(df)
-    signals, summary = interpret_signals(df)
+    col4, col5 = st.columns(2)
+    col4.metric("EMA50", f"{ema50:.2f}")
+    col5.metric("EMA200", f"{ema200:.2f}")
 
-    st.markdown(f"### السعر الحالي: `{df['close'].iloc[-1]:.12f}` USDT")
 
-    st.header("⚙️ المؤشرات الفنية")
-    for k, (v, s) in signals.items():
-        st.write(f"**{k}:** {v:.2f} – {s}" if isinstance(v, float) else f"**{k}:** {s}")
+    # استنتاج عام
+    st.markdown("## ✅ الاستنتاج الاستراتيجي")
+    recommendation = "⚠️ إشارة غير مؤكدة – يُفضل الانتظار لمزيد من التأكيد."
+    if rsi < 30 and macd_value > 0:
+        recommendation = "✅ فرصة شراء – المؤشرات تدعم دخول إيجابي."
+    elif rsi > 70 and macd_value < 0:
+        recommendation = "❌ إشارة بيع – السوق في حالة تشبع شرائي."
+    st.info(recommendation)
 
-    st.success("الاستنتاج الاستراتيجي")
-    st.info(summary)
+    # تحليل اتجاه السوق
+    st.markdown("## 📊 اتجاه السوق")
+    if rsi < 35 and macd_value > 0:
+        market_trend = "📈 السوق في صعود قوي"
+    elif rsi > 65 and macd_value < 0:
+        market_trend = "📉 السوق في هبوط قوي"
+    elif 45 <= rsi <= 55 and abs(macd_value) < 0.1:
+        market_trend = "➖ السوق مستقر أو جانبي"
+    else:
+        market_trend = "⚠️ الاتجاه غير واضح حالياً"
+    st.info(market_trend)
 
-    st.subheader("📌 Niveaux de Support & Résistance")
-    sr = support_resistance(df)
-    df_sr = pd.DataFrame(sr.items(), columns=["Niveau", "Valeur"])
-    st.dataframe(df_sr)
+    # تحليل الاتجاه بناءً على EMA
+    st.markdown("## 📊 اتجاه السوق (EMA)")
+    if ema50 > ema200:
+        st.success("📈 الاتجاه صاعد (EMA50 > EMA200)")
+    elif ema50 < ema200:
+        st.error("📉 الاتجاه هابط (EMA50 < EMA200)")
+    else:
+        st.info("➖ EMA متساويان – الاتجاه غير واضح")
+
+
+    # الدعم والمقاومة
+    st.markdown("## 📌 Niveaux de Support & Résistance")
+    high = df["high"].max()
+    low = df["low"].min()
+    pivot = (high + low + current_price) / 3
+    support1 = (2 * pivot) - high
+    resistance1 = (2 * pivot) - low
+    support2 = pivot - (resistance1 - support1)
+    resistance2 = pivot + (resistance1 - support1)
+    support3 = low - 2 * (high - pivot)
+    resistance3 = high + 2 * (pivot - low)
+
+    support_resistance_data = pd.DataFrame({
+        "Niveau": [
+            "Support 3", "Support 2", "Support 1", "Pivot",
+            "Résistance 1", "Résistance 2", "Résistance 3"
+        ],
+        "Valeur": [
+            support3, support2, support1, pivot,
+            resistance1, resistance2, resistance3
+        ]
+    })
+
+    support_resistance_data["Valeur"] = support_resistance_data["Valeur"].apply(lambda x: f"{x:.12f}")
+    st.table(support_resistance_data)
+
+    st.caption("🧠 يتم التحديث تلقائياً عند كل تشغيل – يعرض أحدث 100 شمعة.")
