@@ -50,20 +50,10 @@ if df is not None:
     else:
         bb_status = "داخل النطاق"
 
-    # حساب EMA50 و EMA200
-    ema50 = ta.trend.EMAIndicator(close=df["close"], window=50).ema_indicator().iloc[-1]
-    ema200 = ta.trend.EMAIndicator(close=df["close"], window=200).ema_indicator().iloc[-1]
-
-
     col1, col2, col3 = st.columns(3)
     col1.metric("RSI", f"{rsi:.2f}")
     col2.metric("MACD", f"{macd_value:.2f}")
     col3.markdown(f"**Bollinger Band:** {bb_status}")
-
-    col4, col5 = st.columns(2)
-    col4.metric("EMA50", f"{ema50:.2f}")
-    col5.metric("EMA200", f"{ema200:.2f}")
-
 
     # استنتاج عام
     st.markdown("## ✅ الاستنتاج الاستراتيجي")
@@ -85,16 +75,6 @@ if df is not None:
     else:
         market_trend = "⚠️ الاتجاه غير واضح حالياً"
     st.info(market_trend)
-
-    # تحليل الاتجاه بناءً على EMA
-    st.markdown("## 📊 اتجاه السوق (EMA)")
-    if ema50 > ema200:
-        st.success("📈 الاتجاه صاعد (EMA50 > EMA200)")
-    elif ema50 < ema200:
-        st.error("📉 الاتجاه هابط (EMA50 < EMA200)")
-    else:
-        st.info("➖ EMA متساويان – الاتجاه غير واضح")
-
 
     # الدعم والمقاومة
     st.markdown("## 📌 Niveaux de Support & Résistance")
