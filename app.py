@@ -11,95 +11,72 @@ st.markdown("✅ تحليل فني فوري لعملات OKX")
 
 exchange = ccxt.okx()
 markets = exchange.load_markets()
-symbols = [symbol for symbol in markets if "/USDT" in symbol]
+symbols = sorted([s for s in markets if "/USDT" in s])
+symbol = st.selectbox("🔍 اختر العملة", symbols, index=symbols.index("AIDOGE/USDT") if "AIDOGE/USDT" in symbols else 0)
 
-col1, col2 = st.columns(2)
-with col1:
-    selected_symbol = st.selectbox("🔎 اختر العملة", symbols, index=symbols.index("AIDOGE/USDT") if "AIDOGE/USDT" in symbols else 0)
-with col2:
-    timeframe = st.selectbox("🕒 اختر الفريم الزمني", ["1m", "5m", "15m", "1h", "1d", "1w"])
+timeframes = {"1 دقيقة": "1m", "5 دقائق": "5m", "15 دقيقة": "15m", "1 ساعة": "1h", "يومي": "1d", "أسبوعي": "1w"}
+tf_display = list(timeframes.keys())
+tf_select = st.selectbox("🕒 اختر الفريم الزمني", tf_display)
+tf = timeframes[tf_select]
 
 def get_data(symbol, timeframe):
-    try:
-        bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=100)
-        df = pd.DataFrame(bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-        df.set_index("timestamp", inplace=True)
-        return df
-    except Exception as e:
-        st.error(f"حدث خطأ أثناء تحميل البيانات: {e}")
-        return None
+    data = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=100)
+    df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df.set_index("timestamp", inplace=True)
+    return df
 
-df = get_data(selected_symbol, timeframe)
+df = get_data(symbol, tf)
 
-if df is not None:
-    current_price = df["close"].iloc[-1]
-    st.subheader(f"💰 السعر الحالي: :green[{current_price:.12f}] USDT")
+if not df.empty:
+    price = df["close"].iloc[-1]
+    st.subheader(f"💰 السعر الحالي: :green[{price:.12f}] USDT")
 
     st.markdown("## ⚙️ المؤشرات الفنية")
 
-    rsi = ta.momentum.RSIIndicator(close=df["close"]).rsi().iloc[-1]
-    macd = ta.trend.MACD(close=df["close"])
-    macd_value = macd.macd_diff().iloc[-1]
-    bb = ta.volatility.BollingerBands(close=df["close"])
+    rsi = ta.momentum.RSIIndicator(df["close"]).rsi().iloc[-1]
+    macd_val = ta.trend.MACD(df["close"]).macd_diff().iloc[-1]
+    bb = ta.volatility.BollingerBands(df["close"])
     bb_status = "-"
-    if df["close"].iloc[-1] > bb.bollinger_hband().iloc[-1]:
+    if price > bb.bollinger_hband().iloc[-1]:
         bb_status = "📈 فوق النطاق العلوي"
-    elif df["close"].iloc[-1] < bb.bollinger_lband().iloc[-1]:
+    elif price < bb.bollinger_lband().iloc[-1]:
         bb_status = "📉 تحت النطاق السفلي"
     else:
         bb_status = "داخل النطاق"
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("RSI", f"{rsi:.2f}")
-    col2.metric("MACD", f"{macd_value:.2f}")
-    col3.markdown(f"**Bollinger Band:** {bb_status}")
+    ema50 = ta.trend.EMAIndicator(df["close"], window=50).ema_indicator().iloc[-1]
+    ema200 = ta.trend.EMAIndicator(df["close"], window=200).ema_indicator().iloc[-1]
 
-    # استنتاج عام
-    st.markdown("## ✅ الاستنتاج الاستراتيجي")
-    recommendation = "⚠️ إشارة غير مؤكدة – يُفضل الانتظار لمزيد من التأكيد."
-    if rsi < 30 and macd_value > 0:
-        recommendation = "✅ فرصة شراء – المؤشرات تدعم دخول إيجابي."
-    elif rsi > 70 and macd_value < 0:
-        recommendation = "❌ إشارة بيع – السوق في حالة تشبع شرائي."
-    st.info(recommendation)
+    st.write(f"**RSI:** {rsi:.2f} | **MACD:** {macd_val:.2f} | **Bollinger:** {bb_status}")
+    st.write(f"**EMA50:** {ema50:.4f} | **EMA200:** {ema200:.4f}")
 
-    # تحليل اتجاه السوق
-    st.markdown("## 📊 اتجاه السوق")
-    if rsi < 35 and macd_value > 0:
-        market_trend = "📈 السوق في صعود قوي"
-    elif rsi > 65 and macd_value < 0:
-        market_trend = "📉 السوق في هبوط قوي"
-    elif 45 <= rsi <= 55 and abs(macd_value) < 0.1:
-        market_trend = "➖ السوق مستقر أو جانبي"
+    st.markdown("## ✅ توصية التداول")
+
+    if rsi < 30 and macd_val > 0 and ema50 > ema200:
+        st.success("✅ إشارة شراء قوية – دخول LONG مؤكد")
+    elif rsi > 70 and macd_val < 0 and ema50 < ema200:
+        st.error("❌ إشارة بيع قوية – دخول SHORT مؤكد")
+    elif 30 <= rsi <= 50 and (macd_val > 0 or ema50 > ema200):
+        st.info("✅ فرصة شراء محتملة – دخول سريع لربح صغير")
+    elif 50 < rsi < 70 and (macd_val < 0 or ema50 < ema200):
+        st.warning("❌ فرصة بيع محتملة – فرصة تصحيح أو مضاربة")
     else:
-        market_trend = "⚠️ الاتجاه غير واضح حالياً"
-    st.info(market_trend)
+        st.write("⏸️ لا توجد فرصة واضحة حالياً – يُفضل الانتظار.")
 
-    # الدعم والمقاومة
-    st.markdown("## 📌 Niveaux de Support & Résistance")
-    high = df["high"].max()
-    low = df["low"].min()
-    pivot = (high + low + current_price) / 3
-    support1 = (2 * pivot) - high
-    resistance1 = (2 * pivot) - low
-    support2 = pivot - (resistance1 - support1)
-    resistance2 = pivot + (resistance1 - support1)
-    support3 = low - 2 * (high - pivot)
-    resistance3 = high + 2 * (pivot - low)
+    st.markdown("## 📌 الدعم والمقاومة")
+    pivot = (df["high"].iloc[-1] + df["low"].iloc[-1] + price) / 3
+    r1 = 2 * pivot - df["low"].iloc[-1]
+    s1 = 2 * pivot - df["high"].iloc[-1]
+    r2 = pivot + (r1 - s1)
+    s2 = pivot - (r1 - s1)
+    r3 = df["high"].iloc[-1] + 2 * (pivot - df["low"].iloc[-1])
+    s3 = df["low"].iloc[-1] - 2 * (df["high"].iloc[-1] - pivot)
 
-    support_resistance_data = pd.DataFrame({
-        "Niveau": [
-            "Support 3", "Support 2", "Support 1", "Pivot",
-            "Résistance 1", "Résistance 2", "Résistance 3"
-        ],
-        "Valeur": [
-            support3, support2, support1, pivot,
-            resistance1, resistance2, resistance3
-        ]
+    sr_data = pd.DataFrame({
+        "Niveau": ["Support 3", "Support 2", "Support 1", "Pivot", "Resistance 1", "Resistance 2", "Resistance 3"],
+        "Valeur": [s3, s2, s1, pivot, r1, r2, r3]
     })
 
-    support_resistance_data["Valeur"] = support_resistance_data["Valeur"].apply(lambda x: f"{x:.12f}")
-    st.table(support_resistance_data)
-
-    st.caption("🧠 يتم التحديث تلقائياً عند كل تشغيل – يعرض أحدث 100 شمعة.")
+    sr_data["Valeur"] = sr_data["Valeur"].apply(lambda x: f"{x:.12f}")
+    st.table(sr_data)
