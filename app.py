@@ -43,13 +43,26 @@ if not df.empty:
     st.markdown("## ✅ توصية التداول")
 
     recommendation = "⏸️ لا توجد فرصة واضحة – يُفضل الانتظار."
+    action = None
+
     if rsi < 30 and macd_val > 0 and ema50 > ema200:
-        recommendation = "✅ إشارة شراء قوية – فرصة دخول قوية (LONG)"
+        recommendation = "✅ إشارة شراء قوية – دخول LONG مؤكد"
+        action = "BUY"
     elif rsi > 70 and macd_val < 0 and ema50 < ema200:
-        recommendation = "❌ إشارة بيع قوية – فرصة دخول قوية (SHORT)"
+        recommendation = "❌ إشارة بيع قوية – دخول SHORT مؤكد"
+        action = "SELL"
     elif 30 <= rsi <= 50 and macd_val > 0 and ema50 >= ema200 * 0.98:
         recommendation = "✅ فرصة شراء محتملة – دخول سريع لربح صغير"
+        action = "BUY"
     elif 50 < rsi < 70 and macd_val < 0 and ema50 <= ema200 * 1.02:
         recommendation = "❌ فرصة بيع محتملة – دخول سريع لربح صغير"
+        action = "SELL"
 
     st.info(recommendation)
+
+    if action == "BUY":
+        if st.button("تنفيذ صفقة شراء (وهمي)"):
+            st.success("تم تنفيذ صفقة شراء (وهمية) بنجاح.")
+    elif action == "SELL":
+        if st.button("تنفيذ صفقة بيع (وهمية)"):
+            st.warning("تم تنفيذ صفقة بيع (وهمية) بنجاح.")
